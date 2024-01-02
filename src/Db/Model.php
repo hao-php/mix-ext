@@ -1,10 +1,10 @@
 <?php
 
-namespace Haoa\Mixdb;
+namespace Haoa\MixExt\Db;
 
-use Mix\Database\Database;
 use Mix\Database\Connection;
 use Mix\Database\ConnectionInterface;
+use Mix\Database\Database;
 
 /**
  * @method get() 获取多行
@@ -17,6 +17,8 @@ abstract class Model
 {
 
     public string $table;
+
+    protected Database $database;
 
     /**
      * 更新的时候自动写入修改时间
@@ -60,8 +62,6 @@ abstract class Model
     public function __construct()
     {
     }
-
-    abstract protected function getDatabase(): Database;
 
     protected function buildUpdateTime($time = null)
     {
@@ -195,7 +195,7 @@ abstract class Model
         $this->reset();
     }
 
-    protected function getConn(): Connection
+    protected function getConn(): ConnectionInterface
     {
         if (empty($this->table)) {
             throw new \Exception("table is empty");
@@ -204,7 +204,12 @@ abstract class Model
         if (!empty($this->alias)) {
             $table .= " AS " . $this->alias;
         }
-        return DB::getConn($this->getDatabase())->table($table);
+        return $this->database->table($table);
+    }
+
+    public function setDatabase(Database $db)
+    {
+        $this->database = $db;
     }
 
     public static function create(): static
