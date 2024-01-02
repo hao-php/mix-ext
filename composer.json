@@ -1,0 +1,13 @@
+{
+    "name": "haoa/mix-ext",
+    "type": "library",
+    "license": "Apache-2.0",
+    "autoload": {
+        "psr-4": {
+            "Haoa\\MixExt\\": "src/"
+        }
+    },
+    "require": {
+        "mix/database": "^3.0"
+    }
+}
