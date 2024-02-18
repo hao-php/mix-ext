@@ -5,6 +5,7 @@ namespace Haoa\MixExt\Db;
 use Mix\Database\Connection;
 use Mix\Database\ConnectionInterface;
 use Mix\Database\Database;
+use Mix\Database\Transaction;
 
 /**
  * @method get() 获取多行
@@ -18,7 +19,7 @@ abstract class Model
 
     public string $table;
 
-    protected Database $database;
+    protected Database|TransactionPacker $database;
 
     /**
      * 更新的时候自动写入修改时间
@@ -207,14 +208,18 @@ abstract class Model
         return $this->database->table($table);
     }
 
-    public function setDatabase(Database $db)
+    public function setDatabase(Database|TransactionPacker $db)
     {
         $this->database = $db;
     }
 
-    public static function create(): static
+    public static function create(Database|TransactionPacker|null $db): static
     {
-        return new static();
+        $obj = new static();
+        if (!empty($db)) {
+            $obj->setDatabase($db);
+        }
+        return $obj;
     }
 
     public function getTable()
@@ -360,6 +365,39 @@ abstract class Model
         return $this->lastQueryLog;
     }
 
+    public function getLastSql(): string
+    {
+        $log = $this->getLastQueryLog();
+        if (empty($log['sql'])) {
+            return '';
+        }
+        $sql = $log['sql'];
+        if (!empty($log['bindings'])) {
+            reset($log['bindings']);
+            $firstKey = key($log['bindings']);
+            if (is_string($firstKey)) {
+                foreach ($log['bindings'] as $key => $v) {
+                    $sql = str_replace(':' . $key, '"' . $v . '"', $sql);
+                }
+            } else {
+                foreach ($log['bindings'] as $key => $v) {
+                    if (is_array($v)) {
+                        foreach ($v as &$vv) {
+                            $vv = addslashes($vv);
+                        }
+                        $v = implode('","', $v);
+                    } else {
+                        $v = addslashes($v);
+                    }
+                    $log['bindings'][$key] = '"' . $v . '"';
+                }
+                $sql = str_replace('?', '%s', $sql);
+                $sql = sprintf($sql, ...$log['bindings']);
+            }
+        }
+        return $sql;
+    }
+
 
     /**
      * @return int 受影响行数
@@ -393,7 +431,7 @@ abstract class Model
     /**
      *
      */
-    public function insert(array $data, bool $lastId = false, $insert = 'INSERT INTO'): ConnectionInterface
+    public function insert(array $data, $insert = 'INSERT INTO'): ConnectionInterface
     {
         $createTime = null;
         if ($this->createTimeField && !isset($data[$this->createTimeField])) {
@@ -406,11 +444,29 @@ abstract class Model
         $conn = $this->getConn();
         $this->buildQuery($conn);
         $ret = $conn->insert($this->table, $data, $insert);
-        if ($lastId) {
-            $ret = $ret->lastInsertId();
-        }
         $this->lastQueryLog = $conn->queryLog();
         return $ret;
+    }
+
+    /**
+     *
+     */
+    public function insertGetId(array $data, $insert = 'INSERT INTO'): string
+    {
+        $createTime = null;
+        if ($this->createTimeField && !isset($data[$this->createTimeField])) {
+            $createTime = $data[$this->createTimeField] = $this->buildCreateTime();
+        }
+
+        if ($this->updateTimeField && !isset($data[$this->updateTimeField])) {
+            $data[$this->updateTimeField] = $this->buildUpdateTime($createTime);
+        }
+        $conn = $this->getConn();
+        $this->buildQuery($conn);
+        $ret = $conn->insert($this->table, $data, $insert);
+        $id = $ret->lastInsertId();
+        $this->lastQueryLog = $conn->queryLog();
+        return $id;
     }
 
     /**
